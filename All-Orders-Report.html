@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>All Orders Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #7d8590;
+  --accent: #388bfd;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.header-left h1 { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+.header-left .subtitle { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+.header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.btn {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { background: #2d333b; border-color: #58a6ff; }
+.btn-primary { background: var(--accent); border-color: transparent; color: #fff; }
+.btn-primary:hover { background: #58a6ff; }
+
+.badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.badge-active { background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); }
+.badge-recent { background: rgba(88,166,255,0.15); color: #79c0ff; border: 1px solid rgba(88,166,255,0.3); }
+
+/* Drop */
+.drop-overlay {
+  position: fixed; inset: 0;
+  background: rgba(13,17,23,0.85);
+  display: none; align-items: center; justify-content: center;
+  z-index: 999; backdrop-filter: blur(4px);
+}
+.drop-overlay.active { display: flex; }
+.drop-box {
+  border: 2px dashed var(--accent); border-radius: 16px;
+  padding: 56px 80px; text-align: center; background: var(--surface);
+}
+.drop-box h2 { font-size: 1.25rem; margin-bottom: 8px; }
+.drop-box p { color: var(--text-muted); }
+.drop-icon { font-size: 2.5rem; margin-bottom: 16px; }
+
+.container { max-width: 1440px; margin: 0 auto; padding: 20px 24px; }
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 60vh; text-align: center; gap: 12px;
+}
+.empty-icon { font-size: 3rem; margin-bottom: 8px; }
+.empty-state h2 { font-size: 1.25rem; font-weight: 600; }
+.empty-state p { color: var(--text-muted); max-width: 420px; line-height: 1.6; }
+.empty-actions { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+
+/* KPI */
+.section-label {
+  font-size: 0.72rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;
+}
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; position: relative; overflow: hidden;
+}
+.kpi-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 2px; background: var(--card-accent, var(--accent));
+}
+.kpi-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.kpi-value { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+.kpi-sub { font-size: 0.73rem; color: var(--text-muted); margin-top: 5px; }
+.kpi-delta { font-size: 0.75rem; font-weight: 600; margin-top: 4px; }
+.up { color: #3fb950; }
+.down { color: #f85149; }
+.neutral { color: var(--text-muted); }
+
+/* Tabs */
+.tabs {
+  display: flex; margin-bottom: 20px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px; width: fit-content;
+}
+.tab {
+  padding: 7px 20px; border-radius: 5px; border: none;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; font-size: 0.82rem; font-weight: 500; transition: all 0.15s;
+}
+.tab.active { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+/* Charts */
+.charts-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;
+}
+@media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
+.chart-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 18px;
+}
+.chart-card.full-width { grid-column: 1 / -1; }
+
+.chart-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; gap: 12px; }
+.chart-title { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+.chart-subtitle { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+.chart-container { position: relative; height: 250px; }
+
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-muted); }
+.legend-swatch { width: 20px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+.legend-block { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+/* Table */
+.table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+.table-header { padding: 14px 18px; font-size: 0.85rem; font-weight: 600; border-bottom: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; }
+th { padding: 9px 14px; text-align: right; color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th:first-child { text-align: left; }
+td { padding: 9px 14px; text-align: right; border-bottom: 1px solid rgba(48,54,61,0.6); font-size: 0.82rem; }
+td:first-child { text-align: left; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(33,38,45,0.6); }
+
+.season-name { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.season-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.tag { font-size: 0.65rem; border-radius: 4px; padding: 1px 5px; font-weight: 600; }
+.tag-active { background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); }
+.tag-recent { background: rgba(121,192,255,0.15); color: #79c0ff; border: 1px solid rgba(121,192,255,0.3); }
+.pos { color: #3fb950; }
+.neg { color: #f85149; }
+
+.footer { text-align: center; padding: 24px; color: var(--text-muted); font-size: 0.72rem; border-top: 1px solid var(--border); }
+input[type="file"] { display: none; }
+
+/* Source legend */
+.source-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+</style>
+</head>
+<body>
+
+<input type="file" id="fileInput" accept=".csv">
+
+<div class="drop-overlay" id="dropOverlay">
+  <div class="drop-box">
+    <div class="drop-icon">📂</div>
+    <h2>Drop your CSV here</h2>
+    <p>Release to load updated All Orders data</p>
+  </div>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <h1>All Orders Report</h1>
+    <div class="subtitle" id="lastUpdated">Drag &amp; drop your All Orders CSV to load, or click Load CSV</div>
+  </div>
+  <div class="header-right">
+    <div class="badges" id="headerBadges"></div>
+    <button class="btn" id="loadBtn">Load CSV</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <div id="emptyState" class="empty-state">
+    <div class="empty-icon">📊</div>
+    <h2>No Data Loaded</h2>
+    <p>Drop your All Orders CSV file anywhere on this page, or click the button below to browse for it. Drop in a new file each week to refresh all trend lines.</p>
+    <div class="empty-actions">
+      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">Choose CSV File</button>
+    </div>
+  </div>
+
+  <div id="dashboard" style="display:none">
+    <div class="section-label">Season Overview</div>
+    <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="tabs" id="tabBar"></div>
+    <div id="tabPanels"></div>
+
+    <div class="table-card">
+      <div class="table-header">Season Summary</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Season</th>
+            <th>Total Units</th>
+            <th>Total Revenue</th>
+            <th>Avg $/Unit</th>
+            <th>Pre-Book</th>
+            <th>Post Deadline</th>
+            <th>At-Once (AO)</th>
+            <th>Weeks Active</th>
+            <th>vs Prior Year</th>
+          </tr>
+        </thead>
+        <tbody id="summaryTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer" id="footer" style="display:none">
+  Drop a new All Orders CSV onto this page anytime to refresh all data and trend lines.
+</div>
+
+<script>
+// ── Season config (extend here for future seasons) ──────────────
+// Spring and Summer both use type: 'warm' so they appear on one combined tab
+const SEASON_CONFIG = {
+  'SPRING 2024': { color: '#bc8cff', label: 'Spring 2024', type: 'warm' },
+  'SPRING 2025': { color: '#e3b341', label: 'Spring 2025', type: 'warm' },
+  'SPRING 2026': { color: '#56d364', label: 'Spring 2026', type: 'warm', current: true },
+  'SPRING 2027': { color: '#f0883e', label: 'Spring 2027', type: 'warm', future: true },
+  'SUMMER 2023': { color: '#6e7681', label: 'Summer 2023', type: 'warm' },
+  'SUMMER 2024': { color: '#d29922', label: 'Summer 2024', type: 'warm' },
+  'SUMMER 2025': { color: '#f78166', label: 'Summer 2025', type: 'warm' },
+  'SUMMER 2026': { color: '#56d364', label: 'Summer 2026', type: 'warm', current: true },
+  'SUMMER 2027': { color: '#bc8cff', label: 'Summer 2027', type: 'warm', future: true },
+  'FALL 2023':   { color: '#6e7681', label: 'Fall 2023',   type: 'fall' },
+  'FALL 2024':   { color: '#d29922', label: 'Fall 2024',   type: 'fall' },
+  'FALL 2025':   { color: '#79c0ff', label: 'Fall 2025',   type: 'fall' },
+  'FALL 2026':   { color: '#3fb950', label: 'Fall 2026',   type: 'fall', current: true },
+  'FALL 2027':   { color: '#f0883e', label: 'Fall 2027',   type: 'fall', future: true },
+};
+
+// Year colors for the Annual combined tab
+const YEAR_COLORS = {
+  '2023': '#6e7681',
+  '2024': '#d29922',
+  '2025': '#79c0ff',
+  '2026': '#3fb950',
+  '2027': '#f0883e',
+  '2028': '#bc8cff',
+};
+function getYearColor(y) { return YEAR_COLORS[y] || '#58a6ff'; }
+
+// Fallback colors for unknown seasons
+const FALLBACK_COLORS = ['#58a6ff','#f0883e','#bc8cff','#56d364','#e3b341','#f78166'];
+let fallbackIdx = 0;
+
+function getSeasonCfg(key) {
+  if (SEASON_CONFIG[key]) return SEASON_CONFIG[key];
+  // Auto-create config for unknown seasons
+  const m = key.match(/^(\w+)\s+(\d+)$/);
+  const type = m ? m[1].toLowerCase() : 'other';
+  const cfg = { color: FALLBACK_COLORS[fallbackIdx++ % FALLBACK_COLORS.length], label: key, type };
+  SEASON_CONFIG[key] = cfg;
+  return cfg;
+}
+
+// Source type config
+const SOURCES = ['PRE-BOOK', 'Post Deadline', 'AO'];
+const SOURCE_COLORS = {
+  'PRE-BOOK':       '#58a6ff',
+  'Post Deadline':  '#f0883e',
+  'AO':             '#3fb950',
+};
+const SOURCE_LABELS = {
+  'PRE-BOOK':      'Pre-Book',
+  'Post Deadline': 'Post Deadline',
+  'AO':            'At-Once (AO)',
+};
+
+let charts = {};
+
+// ── Parsing ─────────────────────────────────────────────────────
+function parseAmount(s) {
+  if (!s || typeof s !== 'string') return 0;
+  return parseFloat(s.replace(/[$,\s]/g, '')) || 0;
+}
+
+function parseDate(s) {
+  if (!s || typeof s !== 'string') return null;
+  const t = s.trim();
+  if (!t || t === 'Date') return null;
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!m) return null;
+  let y = parseInt(m[3]);
+  if (y < 100) y += y < 50 ? 2000 : 1900;
+  return new Date(y, parseInt(m[1]) - 1, parseInt(m[2]));
+}
+
+function processCSV(text) {
+  const result = Papa.parse(text, { header: false, skipEmptyLines: true });
+  const records = [];
+
+  for (const row of result.data) {
+    const season = (row[0] || '').trim().toUpperCase();
+    if (!season || season === 'SEASON') continue;
+
+    const date   = parseDate(row[4]);
+    if (!date) continue;
+
+    const units  = parseInt(row[8]) || 0;
+    const amount = parseAmount(row[9]);
+    const source = (row[10] || '').trim() || 'AO';
+
+    records.push({ season, date, units, amount, source });
+  }
+
+  return records;
+}
+
+function groupBySeason(records) {
+  const g = {};
+  for (const r of records) {
+    if (!g[r.season]) g[r.season] = [];
+    g[r.season].push(r);
+  }
+  for (const k of Object.keys(g)) g[k].sort((a, b) => a.date - b.date);
+  return g;
+}
+
+function groupByType(seasonGroups) {
+  const types = {};
+  for (const key of Object.keys(seasonGroups)) {
+    const cfg  = getSeasonCfg(key);
+    const type = cfg.type || 'other';
+    if (!types[type]) types[type] = [];
+    types[type].push(key);
+  }
+  for (const t of Object.keys(types)) {
+    types[t].sort((a, b) => {
+      const ya = parseInt(a.match(/\d+/) || 0);
+      const yb = parseInt(b.match(/\d+/) || 0);
+      if (ya !== yb) return ya - yb;
+      // Within same year: SPRING before SUMMER
+      const rank = k => k.includes('SPRING') ? 0 : k.includes('SUMMER') ? 1 : 2;
+      return rank(a) - rank(b);
+    });
+  }
+  return types;
+}
+
+// Group all records by the year in the season name (e.g. FALL 2026 → '2026')
+function groupByYear(seasonGroups) {
+  const years = {};
+  for (const [season, records] of Object.entries(seasonGroups)) {
+    const m = season.match(/\d+/);
+    if (!m) continue;
+    const yr = m[0];
+    if (!years[yr]) years[yr] = [];
+    for (const r of records) years[yr].push(r);
+  }
+  for (const yr of Object.keys(years)) years[yr].sort((a, b) => a.date - b.date);
+  return years;
+}
+
+// ── Aggregation ──────────────────────────────────────────────────
+const MS_WEEK = 7 * 24 * 60 * 60 * 1000;
+
+function weeklyAgg(records) {
+  if (!records || !records.length) return { byWeek: {}, maxWeek: 0 };
+  const start = records[0].date;
+  const byWeek = {};
+  for (const r of records) {
+    const w = Math.floor((r.date - start) / MS_WEEK);
+    if (!byWeek[w]) byWeek[w] = { units: 0, amount: 0 };
+    byWeek[w].units  += r.units;
+    byWeek[w].amount += r.amount;
+  }
+  const maxWeek = Math.max(...Object.keys(byWeek).map(Number));
+  return { byWeek, maxWeek };
+}
+
+function monthlyAgg(records) {
+  if (!records || !records.length) return { byMonth: {}, maxMonth: 0, startDate: null };
+  const start   = records[0].date;
+  const startMo = start.getFullYear() * 12 + start.getMonth();
+  const byMonth = {};
+  for (const r of records) {
+    const mo = (r.date.getFullYear() * 12 + r.date.getMonth()) - startMo;
+    if (!byMonth[mo]) byMonth[mo] = { units: 0, amount: 0 };
+    byMonth[mo].units  += r.units;
+    byMonth[mo].amount += r.amount;
+  }
+  const maxMonth = Math.max(...Object.keys(byMonth).map(Number));
+  return { byMonth, maxMonth, startDate: start };
+}
+
+function cumulativeSeries(byWeek, globalMax, metric) {
+  let run = 0;
+  const localMax = Object.keys(byWeek).length ? Math.max(...Object.keys(byWeek).map(Number)) : 0;
+  return Array.from({ length: globalMax + 1 }, (_, w) => {
+    if (byWeek[w]) run += byWeek[w][metric];
+    return w <= localMax ? run : null;
+  });
+}
+
+// ── Formatting ───────────────────────────────────────────────────
+function fmtNum(v) {
+  if (v == null) return '';
+  if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+  if (v >= 1000)    return (v / 1000).toFixed(1) + 'K';
+  return Math.round(v).toLocaleString();
+}
+function fmtCur(v) {
+  if (v == null) return '';
+  if (v >= 1000000) return '$' + (v / 1000000).toFixed(2) + 'M';
+  if (v >= 1000)    return '$' + (v / 1000).toFixed(0) + 'K';
+  return '$' + Math.round(v).toLocaleString();
+}
+function fmtCurFull(v) { return '$' + Math.round(v).toLocaleString(); }
+
+function pct(a, b) { return (!b || b === 0) ? null : ((a - b) / b) * 100; }
+function pctStr(p) { return p == null ? '' : `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`; }
+
+// ── Chart helpers ────────────────────────────────────────────────
+function chartOpts(yFmt, tooltipFmt) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: { duration: 350 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
+        titleColor: '#e6edf3', bodyColor: '#7d8590', padding: 10,
+        callbacks: {
+          label: ctx => {
+            if (ctx.parsed.y === null) return null;
+            const v = tooltipFmt ? tooltipFmt(ctx.parsed.y) : ctx.parsed.y;
+            return `  ${ctx.dataset.label}: ${v}`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { color: '#6e7681', font: { size: 10 }, maxTicksLimit: 18 },
+        grid: { color: 'rgba(48,54,61,0.6)' }, border: { color: 'rgba(48,54,61,0.6)' },
+      },
+      y: {
+        ticks: { color: '#6e7681', font: { size: 10 }, callback: yFmt || undefined },
+        grid: { color: 'rgba(48,54,61,0.6)' }, border: { color: 'rgba(48,54,61,0.6)' },
+      },
+    },
+  };
+}
+
+function chartBarStacked(yFmt, tooltipFmt) {
+  const opts = chartOpts(yFmt, tooltipFmt);
+  opts.scales.x.stacked = true;
+  opts.scales.y.stacked = true;
+  return opts;
+}
+
+function makeChart(id, type, labels, datasets, yFmt, tooltipFmt, stacked) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  charts[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets },
+    options: stacked ? chartBarStacked(yFmt, tooltipFmt) : chartOpts(yFmt, tooltipFmt),
+  });
+}
+
+function lineDs(label, data, color, bold) {
+  return { label, data, borderColor: color, backgroundColor: 'transparent',
+    borderWidth: bold ? 2.5 : 1.5, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, spanGaps: false };
+}
+function barDs(label, data, color) {
+  return { label, data, backgroundColor: color + 'b0', borderColor: color, borderWidth: 1, borderRadius: 2 };
+}
+function stackDs(label, data, color) {
+  return { label, data, backgroundColor: color + 'cc', borderColor: color, borderWidth: 1, borderRadius: 2 };
+}
+
+function weekLabels(n) { return Array.from({ length: n }, (_, i) => `Wk ${i + 1}`); }
+function monthLabels(startDate, n) {
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const b = startDate.getMonth();
+  return Array.from({ length: n }, (_, i) => M[(b + i) % 12]);
+}
+
+// ── Legend renderers ─────────────────────────────────────────────
+function renderLineLegend(containerId, keys) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = keys.map(k => {
+    const cfg = getSeasonCfg(k);
+    const tag = cfg.current ? ' <span class="tag tag-active">Active</span>' : (cfg.future ? ' <span class="tag tag-recent">Coming</span>' : '');
+    return `<div class="legend-item"><div class="legend-swatch" style="background:${cfg.color}"></div><span>${cfg.label}${tag}</span></div>`;
+  }).join('');
+}
+
+function sourceLegendHtml() {
+  return `<div class="source-legend">${SOURCES.map(s =>
+    `<div class="legend-item"><div class="legend-block" style="background:${SOURCE_COLORS[s]}"></div><span>${SOURCE_LABELS[s]}</span></div>`
+  ).join('')}</div>`;
+}
+
+// ── Tab content builder ──────────────────────────────────────────
+const TYPE_LABELS = { fall: 'Fall', warm: 'Spring / Summer', winter: 'Winter', other: 'Other' };
+
+function buildTabPanel(type) {
+  return `
+    <div id="panel_${type}" class="tab-panel" style="display:none">
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div><div class="chart-title">Cumulative Units</div><div class="chart-subtitle">Week-normalized — Week 1 = first order for each season</div></div>
+          </div>
+          <div class="chart-container"><canvas id="chart_${type}_cumUnits"></canvas></div>
+          <div class="chart-legend" id="legend_${type}"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header">
+            <div><div class="chart-title">Cumulative Revenue</div><div class="chart-subtitle">Week-normalized season comparison</div></div>
+          </div>
+          <div class="chart-container"><canvas id="chart_${type}_cumRevenue"></canvas></div>
+        </div>
+        <div class="chart-card full-width">
+          <div class="chart-header">
+            <div><div class="chart-title">Monthly Units — by Season</div><div class="chart-subtitle">New units per month-of-season, all seasons overlaid</div></div>
+          </div>
+          <div class="chart-container" style="height:220px"><canvas id="chart_${type}_monthly"></canvas></div>
+        </div>
+        <div class="chart-card full-width">
+          <div class="chart-header">
+            <div><div class="chart-title">Order Source Mix</div><div class="chart-subtitle">Pre-Book vs Post Deadline vs At-Once (AO) units per season</div></div>
+          </div>
+          <div class="chart-container" style="height:180px"><canvas id="chart_${type}_source"></canvas></div>
+          ${sourceLegendHtml()}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── Chart rendering per type ─────────────────────────────────────
+function renderTypeCharts(type, sortedKeys, groups) {
+  // ── Cumulative charts (week-normalized) ──
+  const weekly = {};
+  let globalMaxWeek = 0;
+  for (const k of sortedKeys) {
+    const agg = weeklyAgg(groups[k]);
+    weekly[k] = agg;
+    globalMaxWeek = Math.max(globalMaxWeek, agg.maxWeek);
+  }
+
+  const wLabels = weekLabels(globalMaxWeek + 1);
+
+  makeChart(`chart_${type}_cumUnits`, 'line', wLabels,
+    sortedKeys.map(k => {
+      const cfg = getSeasonCfg(k);
+      return lineDs(cfg.label, cumulativeSeries(weekly[k].byWeek, globalMaxWeek, 'units'), cfg.color, cfg.current || cfg.future);
+    }),
+    v => fmtNum(v), v => fmtNum(v) + ' units'
+  );
+
+  makeChart(`chart_${type}_cumRevenue`, 'line', wLabels,
+    sortedKeys.map(k => {
+      const cfg = getSeasonCfg(k);
+      return lineDs(cfg.label, cumulativeSeries(weekly[k].byWeek, globalMaxWeek, 'amount'), cfg.color, cfg.current || cfg.future);
+    }),
+    v => fmtCur(v), v => fmtCurFull(v)
+  );
+
+  // ── Monthly activity ──
+  const monthly = {};
+  let globalMaxMonth = 0;
+  for (const k of sortedKeys) {
+    const agg = monthlyAgg(groups[k]);
+    monthly[k] = agg;
+    globalMaxMonth = Math.max(globalMaxMonth, agg.maxMonth);
+  }
+
+  const firstStart = groups[sortedKeys[0]][0].date;
+  const mLabels = monthLabels(firstStart, globalMaxMonth + 1);
+
+  makeChart(`chart_${type}_monthly`, 'bar', mLabels,
+    sortedKeys.map(k => {
+      const cfg  = getSeasonCfg(k);
+      const data = Array.from({ length: globalMaxMonth + 1 }, (_, mo) =>
+        monthly[k].byMonth[mo] ? monthly[k].byMonth[mo].units : 0
+      );
+      return barDs(cfg.label, data, cfg.color);
+    }),
+    v => fmtNum(v), v => fmtNum(v) + ' units'
+  );
+
+  // ── Source mix stacked bar ──
+  const seasonLabels = sortedKeys.map(k => getSeasonCfg(k).label);
+  makeChart(`chart_${type}_source`, 'bar', seasonLabels,
+    SOURCES.map(src => stackDs(
+      SOURCE_LABELS[src],
+      sortedKeys.map(k => groups[k].filter(r => r.source === src).reduce((s, r) => s + r.units, 0)),
+      SOURCE_COLORS[src]
+    )),
+    v => fmtNum(v), v => fmtNum(v) + ' units', true
+  );
+
+  renderLineLegend(`legend_${type}`, sortedKeys);
+}
+
+// ── KPI Cards ────────────────────────────────────────────────────
+function renderKPIs(groups, typeGroups) {
+  const grid = document.getElementById('kpiGrid');
+
+  function totalOf(records) {
+    if (!records || !records.length) return { units: 0, amount: 0 };
+    return { units: records.reduce((s, r) => s + r.units, 0), amount: records.reduce((s, r) => s + r.amount, 0) };
+  }
+
+  function seasonAtWeek(records, maxW) {
+    if (!records || !records.length) return { units: 0, amount: 0 };
+    const start = records[0].date;
+    let units = 0, amount = 0;
+    for (const r of records) {
+      if (Math.floor((r.date - start) / MS_WEEK) <= maxW) { units += r.units; amount += r.amount; }
+    }
+    return { units, amount };
+  }
+
+  function weeksIn(records) {
+    if (!records || records.length < 2) return 0;
+    return Math.floor((records[records.length - 1].date - records[0].date) / MS_WEEK);
+  }
+
+  function makeKPI(label, value, fmtFn, sub, compareVal, color) {
+    const p = pct(value, compareVal);
+    const deltaHtml = p != null
+      ? `<div class="kpi-delta ${p >= 0 ? 'up' : 'down'}">${p >= 0 ? '▲' : '▼'} ${pctStr(p)}</div>`
+      : '';
+    return `<div class="kpi-card" style="--card-accent:${color || 'var(--accent)'}">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-value">${fmtFn(value)}</div>
+      <div class="kpi-sub">${sub}</div>
+      ${deltaHtml}
+    </div>`;
+  }
+
+  const cards = [];
+
+  // For each type, show the most recent season vs the prior one
+  const TYPE_ORDER = ['warm', 'fall'];
+  for (const type of TYPE_ORDER) {
+    const keys = typeGroups[type];
+    if (!keys || keys.length === 0) continue;
+
+    const current  = keys[keys.length - 1];
+    const prior    = keys.length >= 2 ? keys[keys.length - 2] : null;
+    const cfg      = getSeasonCfg(current);
+    const curRecs  = groups[current];
+    const priorRecs = prior ? groups[prior] : null;
+
+    const curTotal   = totalOf(curRecs);
+    const curWeeks   = weeksIn(curRecs);
+    const priorSame  = priorRecs ? seasonAtWeek(priorRecs, curWeeks) : null;
+    const priorTotal = priorRecs ? totalOf(priorRecs) : null;
+
+    // Use "same point" comparison if current season is likely still active
+    const useTotal = !cfg.current; // completed seasons compare total-to-total
+    const priorCompare = useTotal ? priorTotal : priorSame;
+    const compareSub = priorRecs
+      ? (useTotal ? `vs ${getSeasonCfg(prior).label} total: ${fmtNum(priorCompare?.units)}` : `vs ${getSeasonCfg(prior).label} at same week: ${fmtNum(priorCompare?.units)}`)
+      : (cfg.current ? 'Current season (in progress)' : 'Full season total');
+
+    cards.push(makeKPI(`${cfg.label} — Units`, curTotal.units, fmtNum, compareSub, priorCompare?.units, cfg.color));
+
+    const revSub = priorRecs
+      ? (useTotal ? `vs ${getSeasonCfg(prior).label} total: ${fmtCur(priorCompare?.amount)}` : `vs ${getSeasonCfg(prior).label} at same week: ${fmtCur(priorCompare?.amount)}`)
+      : (cfg.current ? 'Current season (in progress)' : 'Full season total');
+    cards.push(makeKPI(`${cfg.label} — Revenue`, curTotal.amount, fmtCur, revSub, priorCompare?.amount, cfg.color));
+  }
+
+  grid.innerHTML = cards.join('');
+}
+
+// ── Summary table ────────────────────────────────────────────────
+function renderTable(groups) {
+  const TYPE_ORDER = ['fall', 'warm', 'other'];
+  const allKeys = Object.keys(groups).sort((a, b) => {
+    const ta = getSeasonCfg(a).type || 'other';
+    const tb = getSeasonCfg(b).type || 'other';
+    const oi = (t) => TYPE_ORDER.indexOf(t) >= 0 ? TYPE_ORDER.indexOf(t) : 99;
+    if (oi(ta) !== oi(tb)) return oi(ta) - oi(tb);
+    const ya = parseInt(a.match(/\d+/) || 0);
+    const yb = parseInt(b.match(/\d+/) || 0);
+    if (ya !== yb) return ya - yb;
+    const rank = k => k.includes('SPRING') ? 0 : k.includes('SUMMER') ? 1 : 2;
+    return rank(a) - rank(b);
+  });
+
+  const PRIOR_MAP = {};
+  for (const type of TYPE_ORDER) {
+    const keys = allKeys.filter(k => (getSeasonCfg(k).type || 'other') === type);
+    for (let i = 1; i < keys.length; i++) PRIOR_MAP[keys[i]] = keys[i - 1];
+  }
+
+  const rows = allKeys.map(k => {
+    const recs   = groups[k];
+    const units  = recs.reduce((s, r) => s + r.units, 0);
+    const amount = recs.reduce((s, r) => s + r.amount, 0);
+    const avgPer = units > 0 ? amount / units : 0;
+
+    const srcUnits = (src) => recs.filter(r => r.source === src).reduce((s, r) => s + r.units, 0);
+    const prebook  = srcUnits('PRE-BOOK');
+    const postdl   = srcUnits('Post Deadline');
+    const ao       = srcUnits('AO');
+
+    const weeks = recs.length >= 2
+      ? Math.max(1, Math.ceil((recs[recs.length - 1].date - recs[0].date) / MS_WEEK) + 1)
+      : 1;
+
+    const priorKey   = PRIOR_MAP[k];
+    const priorUnits = priorKey ? groups[priorKey].reduce((s, r) => s + r.units, 0) : null;
+    const p          = pct(units, priorUnits);
+    const yoyHtml    = p != null
+      ? `<span class="${p >= 0 ? 'pos' : 'neg'}">${p >= 0 ? '▲' : '▼'} ${pctStr(p)}</span>`
+      : '<span class="neutral">—</span>';
+
+    const cfg = getSeasonCfg(k);
+    const tag = cfg.current ? '<span class="tag tag-active">Active</span>'
+              : (cfg.future ? '<span class="tag tag-recent">Coming</span>' : '');
+
+    return `<tr>
+      <td><div class="season-name"><div class="season-dot" style="background:${cfg.color}"></div>${cfg.label} ${tag}</div></td>
+      <td>${units.toLocaleString()}</td>
+      <td>${fmtCurFull(amount)}</td>
+      <td>$${avgPer.toFixed(2)}</td>
+      <td>${prebook.toLocaleString()}</td>
+      <td>${postdl.toLocaleString()}</td>
+      <td>${ao.toLocaleString()}</td>
+      <td>${weeks}</td>
+      <td>${yoyHtml}</td>
+    </tr>`;
+  });
+
+  document.getElementById('summaryTableBody').innerHTML = rows.join('');
+}
+
+// ── Annual tab panel & charts ────────────────────────────────────
+function buildAnnualPanel() {
+  return `
+    <div id="panel_annual" class="tab-panel" style="display:none">
+      <div class="section-label" style="margin-bottom:12px">Annual Totals — all seasons combined per year</div>
+      <div class="kpi-grid" id="kpiAnnual" style="margin-bottom:24px"></div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div><div class="chart-title">Cumulative Units by Year</div><div class="chart-subtitle">Week-normalized — Week 1 = first order received for that year</div></div>
+          </div>
+          <div class="chart-container"><canvas id="chart_annual_cumUnits"></canvas></div>
+          <div class="chart-legend" id="legend_annual"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header">
+            <div><div class="chart-title">Cumulative Revenue by Year</div><div class="chart-subtitle">Week-normalized annual revenue comparison</div></div>
+          </div>
+          <div class="chart-container"><canvas id="chart_annual_cumRevenue"></canvas></div>
+        </div>
+        <div class="chart-card full-width">
+          <div class="chart-header">
+            <div><div class="chart-title">Monthly Units by Year</div><div class="chart-subtitle">New units per month-of-year cycle, all years overlaid</div></div>
+          </div>
+          <div class="chart-container" style="height:220px"><canvas id="chart_annual_monthly"></canvas></div>
+        </div>
+        <div class="chart-card full-width">
+          <div class="chart-header">
+            <div><div class="chart-title">Order Source Mix by Year</div><div class="chart-subtitle">Pre-Book vs Post Deadline vs At-Once units, per year</div></div>
+          </div>
+          <div class="chart-container" style="height:180px"><canvas id="chart_annual_source"></canvas></div>
+          ${sourceLegendHtml()}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAnnualCharts(yearGroups) {
+  const sortedYears = Object.keys(yearGroups).sort();
+
+  // ── Cumulative (week-normalized) ──
+  const weekly = {};
+  let globalMaxWeek = 0;
+  for (const yr of sortedYears) {
+    const agg = weeklyAgg(yearGroups[yr]);
+    weekly[yr] = agg;
+    globalMaxWeek = Math.max(globalMaxWeek, agg.maxWeek);
+  }
+
+  const wLabels = weekLabels(globalMaxWeek + 1);
+
+  makeChart('chart_annual_cumUnits', 'line', wLabels,
+    sortedYears.map(yr => lineDs(yr, cumulativeSeries(weekly[yr].byWeek, globalMaxWeek, 'units'), getYearColor(yr), yr === sortedYears[sortedYears.length - 1])),
+    v => fmtNum(v), v => fmtNum(v) + ' units'
+  );
+
+  makeChart('chart_annual_cumRevenue', 'line', wLabels,
+    sortedYears.map(yr => lineDs(yr, cumulativeSeries(weekly[yr].byWeek, globalMaxWeek, 'amount'), getYearColor(yr), yr === sortedYears[sortedYears.length - 1])),
+    v => fmtCur(v), v => fmtCurFull(v)
+  );
+
+  // ── Monthly ──
+  const monthly = {};
+  let globalMaxMonth = 0;
+  for (const yr of sortedYears) {
+    const agg = monthlyAgg(yearGroups[yr]);
+    monthly[yr] = agg;
+    globalMaxMonth = Math.max(globalMaxMonth, agg.maxMonth);
+  }
+
+  const firstStart = yearGroups[sortedYears[0]][0].date;
+  const mLabels = monthLabels(firstStart, globalMaxMonth + 1);
+
+  makeChart('chart_annual_monthly', 'bar', mLabels,
+    sortedYears.map(yr => {
+      const data = Array.from({ length: globalMaxMonth + 1 }, (_, mo) =>
+        monthly[yr].byMonth[mo] ? monthly[yr].byMonth[mo].units : 0
+      );
+      return barDs(yr, data, getYearColor(yr));
+    }),
+    v => fmtNum(v), v => fmtNum(v) + ' units'
+  );
+
+  // ── Source mix ──
+  makeChart('chart_annual_source', 'bar', sortedYears,
+    SOURCES.map(src => stackDs(
+      SOURCE_LABELS[src],
+      sortedYears.map(yr => yearGroups[yr].filter(r => r.source === src).reduce((s, r) => s + r.units, 0)),
+      SOURCE_COLORS[src]
+    )),
+    v => fmtNum(v), v => fmtNum(v) + ' units', true
+  );
+
+  // ── Legend ──
+  const legendEl = document.getElementById('legend_annual');
+  if (legendEl) {
+    legendEl.innerHTML = sortedYears.map(yr =>
+      `<div class="legend-item"><div class="legend-swatch" style="background:${getYearColor(yr)}"></div><span>${yr}</span></div>`
+    ).join('');
+  }
+
+  // ── Annual KPI cards ──
+  const kpiEl = document.getElementById('kpiAnnual');
+  if (!kpiEl) return;
+  const cards = [];
+  for (let i = 0; i < sortedYears.length; i++) {
+    const yr      = sortedYears[i];
+    const priorYr = i > 0 ? sortedYears[i - 1] : null;
+    const cur     = yearGroups[yr].reduce((s, r) => ({ units: s.units + r.units, amount: s.amount + r.amount }), { units: 0, amount: 0 });
+    const prior   = priorYr ? yearGroups[priorYr].reduce((s, r) => ({ units: s.units + r.units, amount: s.amount + r.amount }), { units: 0, amount: 0 }) : null;
+    const p       = pct(cur.units, prior?.units);
+    const pr      = pct(cur.amount, prior?.amount);
+    const color   = getYearColor(yr);
+
+    const unitsDelta  = p != null ? `<div class="kpi-delta ${p >= 0 ? 'up' : 'down'}">${p >= 0 ? '▲' : '▼'} ${pctStr(p)}</div>` : '';
+    const revDelta    = pr != null ? `<div class="kpi-delta ${pr >= 0 ? 'up' : 'down'}">${pr >= 0 ? '▲' : '▼'} ${pctStr(pr)}</div>` : '';
+
+    cards.push(`
+      <div class="kpi-card" style="--card-accent:${color}">
+        <div class="kpi-label">${yr} — Units</div>
+        <div class="kpi-value">${fmtNum(cur.units)}</div>
+        <div class="kpi-sub">${prior ? `vs ${priorYr}: ${fmtNum(prior.units)}` : 'All seasons combined'}</div>
+        ${unitsDelta}
+      </div>
+      <div class="kpi-card" style="--card-accent:${color}">
+        <div class="kpi-label">${yr} — Revenue</div>
+        <div class="kpi-value">${fmtCur(cur.amount)}</div>
+        <div class="kpi-sub">${prior ? `vs ${priorYr}: ${fmtCur(prior.amount)}` : 'All seasons combined'}</div>
+        ${revDelta}
+      </div>
+    `);
+  }
+  kpiEl.innerHTML = cards.join('');
+}
+
+// ── Main load ────────────────────────────────────────────────────
+let activeTab = null;
+
+function loadData(text, filename) {
+  const records = processCSV(text);
+  if (records.length === 0) {
+    alert('No valid records found. Check that the file has Season, Date, Qty, Amount, and Source columns.');
+    return;
+  }
+
+  const groups     = groupBySeason(records);
+  const typeGroups = groupByType(groups);
+  const yearGroups = groupByYear(groups);
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('dashboard').style.display  = '';
+  document.getElementById('footer').style.display     = '';
+
+  const now = new Date();
+  document.getElementById('lastUpdated').textContent =
+    `${filename} · Updated ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+  // Badges for active/current seasons
+  const badgesEl = document.getElementById('headerBadges');
+  badgesEl.innerHTML = Object.keys(groups)
+    .filter(k => getSeasonCfg(k).current)
+    .map(k => `<span class="badge badge-active">${getSeasonCfg(k).label} Active</span>`)
+    .join('');
+
+  // Build season tabs dynamically, then append Annual tab
+  const TYPE_ORDER = ['fall', 'warm', 'other'];
+  const presentTypes = TYPE_ORDER.filter(t => typeGroups[t] && typeGroups[t].length > 0);
+
+  const tabBar    = document.getElementById('tabBar');
+  const tabPanels = document.getElementById('tabPanels');
+
+  tabBar.innerHTML =
+    presentTypes.map(t =>
+      `<button class="tab" id="tab_${t}" onclick="switchTab('${t}')">${TYPE_LABELS[t] || t}</button>`
+    ).join('') +
+    `<button class="tab" id="tab_annual" onclick="switchTab('annual')">Annual</button>`;
+
+  tabPanels.innerHTML =
+    presentTypes.map(t => buildTabPanel(t)).join('') +
+    buildAnnualPanel();
+
+  // Render everything
+  renderKPIs(groups, typeGroups);
+  for (const type of presentTypes) renderTypeCharts(type, typeGroups[type], groups);
+  renderAnnualCharts(yearGroups);
+  renderTable(groups);
+
+  // Default to Fall tab
+  const firstTab = presentTypes.includes('fall') ? 'fall' : presentTypes[0] || 'annual';
+  switchTab(firstTab);
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(el => el.style.display = 'none');
+  const tabEl   = document.getElementById(`tab_${tab}`);
+  const panelEl = document.getElementById(`panel_${tab}`);
+  if (tabEl)   tabEl.classList.add('active');
+  if (panelEl) panelEl.style.display = '';
+}
+
+// ── File I/O ─────────────────────────────────────────────────────
+document.getElementById('loadBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => loadData(ev.target.result, file.name);
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+let dragCount = 0;
+document.addEventListener('dragenter', e => { e.preventDefault(); dragCount++; document.getElementById('dropOverlay').classList.add('active'); });
+document.addEventListener('dragleave', () => { dragCount--; if (dragCount <= 0) { dragCount = 0; document.getElementById('dropOverlay').classList.remove('active'); } });
+document.addEventListener('dragover',  e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault(); dragCount = 0;
+  document.getElementById('dropOverlay').classList.remove('active');
+  const file = Array.from(e.dataTransfer.files).find(f => f.name.endsWith('.csv'));
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => loadData(ev.target.result, file.name);
+  reader.readAsText(file);
+});
+
+// Auto-load attempt (works when served over HTTP from same directory)
+fetch('All Orders.csv')
+  .then(r => { if (!r.ok) throw new Error(); return r.text(); })
+  .then(text => loadData(text, 'All Orders.csv'))
+  .catch(() => {});
+</script>
+</body>
+</html>

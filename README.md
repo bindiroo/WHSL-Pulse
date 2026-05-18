@@ -6,13 +6,13 @@ A self-contained HTML dashboard for tracking order performance across all season
 
 | File | Purpose |
 |------|---------|
-| `All-Orders-Report.html` | The dashboard (open this in a browser) |
+| `index.html` | The dashboard (open this in a browser) |
 | `All Orders [date].csv` | Weekly data export — drop in the latest file each week to refresh |
 
 ## Weekly Update Workflow
 
 1. Export your updated All Orders data as a CSV
-2. Open `All-Orders-Report.html` in a browser
+2. Open `index.html` in a browser
 3. Drag and drop the new CSV file anywhere onto the page — all charts, trend lines, and KPIs update instantly
 4. Or click **Load CSV** in the top-right corner to browse for the file
 
@@ -79,4 +79,4 @@ Pre-configured colors by year:
 
 **Option B — GitHub Pages:** Enable GitHub Pages on this repo and share the URL. Upload a new CSV to the repo each week to update the hosted version.
 
-**Option C — Local web server:** Run `python3 -m http.server` in this folder, then open `http://localhost:8000/All-Orders-Report.html`. The dashboard will attempt to auto-load `All Orders.csv` from the same directory on every page refresh.
+**Option C — Local web server:** Run `python3 -m http.server` in this folder, then open `http://localhost:8000/`. The dashboard will attempt to auto-load `All Orders.csv` from the same directory on every page refresh.

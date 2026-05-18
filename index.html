@@ -183,6 +183,37 @@ input[type="file"] { display: none; }
 
 /* Source legend */
 .source-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+
+/* Filters */
+.filter-bar {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
+  display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: flex-start;
+}
+.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.filter-label {
+  font-size: 0.7rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  padding: 4px 10px; border-radius: 14px; cursor: pointer;
+  font-size: 0.74rem; font-weight: 500;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+  user-select: none; white-space: nowrap;
+}
+.chip:hover { background: #2d333b; border-color: #58a6ff; }
+.chip.disabled { opacity: 0.35; }
+.chip.disabled .chip-label { text-decoration: line-through; }
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.filter-actions { margin-left: auto; align-self: flex-end; display: flex; gap: 8px; }
+.filter-empty {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 200px; color: var(--text-muted); font-size: 0.85rem;
+  background: var(--surface); border: 1px dashed var(--border); border-radius: 10px;
+}
 </style>
 </head>
 <body>
@@ -220,6 +251,24 @@ input[type="file"] { display: none; }
   </div>
 
   <div id="dashboard" style="display:none">
+    <div class="filter-bar" id="filterBar">
+      <div class="filter-group">
+        <div class="filter-label">Season</div>
+        <div class="filter-chips" id="filterSeasons"></div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">Year</div>
+        <div class="filter-chips" id="filterYears"></div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">Source</div>
+        <div class="filter-chips" id="filterSources"></div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn" id="resetFiltersBtn">Reset filters</button>
+      </div>
+    </div>
+
     <div class="section-label">Season Overview</div>
     <div class="kpi-grid" id="kpiGrid"></div>
     <div class="tabs" id="tabBar"></div>
@@ -311,6 +360,27 @@ const SOURCE_LABELS = {
 };
 
 let charts = {};
+
+// ── Filter state ────────────────────────────────────────────────
+// Sets store the DISABLED keys. Empty = "all on".
+const filterState = { seasons: new Set(), years: new Set(), sources: new Set() };
+let rawRecords = [];          // unfiltered parsed records
+let presentTypes = [];        // tab types from initial unfiltered data (stable across filter changes)
+let lastFilename = '';
+
+function getYearFromSeason(season) {
+  const m = season.match(/\d+/);
+  return m ? m[0] : '';
+}
+
+function applyFilters(records) {
+  return records.filter(r => {
+    if (filterState.seasons.has(r.season)) return false;
+    if (filterState.years.has(getYearFromSeason(r.season))) return false;
+    if (filterState.sources.has(r.source)) return false;
+    return true;
+  });
+}
 
 // ── Parsing ─────────────────────────────────────────────────────
 function parseAmount(s) {
@@ -542,43 +612,52 @@ function sourceLegendHtml() {
 // ── Tab content builder ──────────────────────────────────────────
 const TYPE_LABELS = { fall: 'Fall', warm: 'Spring / Summer', winter: 'Winter', other: 'Other' };
 
-function buildTabPanel(type) {
+function buildTabPanelInner(type) {
   return `
-    <div id="panel_${type}" class="tab-panel" style="display:none">
-      <div class="charts-grid">
-        <div class="chart-card">
-          <div class="chart-header">
-            <div><div class="chart-title">Cumulative Units</div><div class="chart-subtitle">Week-normalized — Week 1 = first order for each season</div></div>
-          </div>
-          <div class="chart-container"><canvas id="chart_${type}_cumUnits"></canvas></div>
-          <div class="chart-legend" id="legend_${type}"></div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div><div class="chart-title">Cumulative Units</div><div class="chart-subtitle">Week-normalized — Week 1 = first order for each season</div></div>
         </div>
-        <div class="chart-card">
-          <div class="chart-header">
-            <div><div class="chart-title">Cumulative Revenue</div><div class="chart-subtitle">Week-normalized season comparison</div></div>
-          </div>
-          <div class="chart-container"><canvas id="chart_${type}_cumRevenue"></canvas></div>
+        <div class="chart-container"><canvas id="chart_${type}_cumUnits"></canvas></div>
+        <div class="chart-legend" id="legend_${type}"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div><div class="chart-title">Cumulative Revenue</div><div class="chart-subtitle">Week-normalized season comparison</div></div>
         </div>
-        <div class="chart-card full-width">
-          <div class="chart-header">
-            <div><div class="chart-title">Monthly Units — by Season</div><div class="chart-subtitle">New units per month-of-season, all seasons overlaid</div></div>
-          </div>
-          <div class="chart-container" style="height:220px"><canvas id="chart_${type}_monthly"></canvas></div>
+        <div class="chart-container"><canvas id="chart_${type}_cumRevenue"></canvas></div>
+      </div>
+      <div class="chart-card full-width">
+        <div class="chart-header">
+          <div><div class="chart-title">Monthly Units — by Season</div><div class="chart-subtitle">New units per month-of-season, all seasons overlaid</div></div>
         </div>
-        <div class="chart-card full-width">
-          <div class="chart-header">
-            <div><div class="chart-title">Order Source Mix</div><div class="chart-subtitle">Pre-Book vs Post Deadline vs At-Once (AO) units per season</div></div>
-          </div>
-          <div class="chart-container" style="height:180px"><canvas id="chart_${type}_source"></canvas></div>
-          ${sourceLegendHtml()}
+        <div class="chart-container" style="height:220px"><canvas id="chart_${type}_monthly"></canvas></div>
+      </div>
+      <div class="chart-card full-width">
+        <div class="chart-header">
+          <div><div class="chart-title">Order Source Mix</div><div class="chart-subtitle">Pre-Book vs Post Deadline vs At-Once (AO) units per season</div></div>
         </div>
+        <div class="chart-container" style="height:180px"><canvas id="chart_${type}_source"></canvas></div>
+        ${sourceLegendHtml()}
       </div>
     </div>
   `;
 }
 
+function buildTabPanel(type) {
+  return `<div id="panel_${type}" class="tab-panel" style="display:none">${buildTabPanelInner(type)}</div>`;
+}
+
 // ── Chart rendering per type ─────────────────────────────────────
 function renderTypeCharts(type, sortedKeys, groups) {
+  // Drop seasons that have zero records after filtering
+  sortedKeys = sortedKeys.filter(k => groups[k] && groups[k].length > 0);
+  if (sortedKeys.length === 0) {
+    showEmptyPanel(`panel_${type}`);
+    return;
+  }
+
   // ── Cumulative charts (week-normalized) ──
   const weekly = {};
   let globalMaxWeek = 0;
@@ -781,45 +860,54 @@ function renderTable(groups) {
 }
 
 // ── Annual tab panel & charts ────────────────────────────────────
-function buildAnnualPanel() {
+function buildAnnualPanelInner() {
   return `
-    <div id="panel_annual" class="tab-panel" style="display:none">
-      <div class="section-label" style="margin-bottom:12px">Annual Totals — all seasons combined per year</div>
-      <div class="kpi-grid" id="kpiAnnual" style="margin-bottom:24px"></div>
-      <div class="charts-grid">
-        <div class="chart-card">
-          <div class="chart-header">
-            <div><div class="chart-title">Cumulative Units by Year</div><div class="chart-subtitle">Week-normalized — Week 1 = first order received for that year</div></div>
-          </div>
-          <div class="chart-container"><canvas id="chart_annual_cumUnits"></canvas></div>
-          <div class="chart-legend" id="legend_annual"></div>
+    <div class="section-label" style="margin-bottom:12px">Annual Totals — all seasons combined per year</div>
+    <div class="kpi-grid" id="kpiAnnual" style="margin-bottom:24px"></div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-header">
+          <div><div class="chart-title">Cumulative Units by Year</div><div class="chart-subtitle">Week-normalized — Week 1 = first order received for that year</div></div>
         </div>
-        <div class="chart-card">
-          <div class="chart-header">
-            <div><div class="chart-title">Cumulative Revenue by Year</div><div class="chart-subtitle">Week-normalized annual revenue comparison</div></div>
-          </div>
-          <div class="chart-container"><canvas id="chart_annual_cumRevenue"></canvas></div>
+        <div class="chart-container"><canvas id="chart_annual_cumUnits"></canvas></div>
+        <div class="chart-legend" id="legend_annual"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <div><div class="chart-title">Cumulative Revenue by Year</div><div class="chart-subtitle">Week-normalized annual revenue comparison</div></div>
         </div>
-        <div class="chart-card full-width">
-          <div class="chart-header">
-            <div><div class="chart-title">Monthly Units by Year</div><div class="chart-subtitle">New units per month-of-year cycle, all years overlaid</div></div>
-          </div>
-          <div class="chart-container" style="height:220px"><canvas id="chart_annual_monthly"></canvas></div>
+        <div class="chart-container"><canvas id="chart_annual_cumRevenue"></canvas></div>
+      </div>
+      <div class="chart-card full-width">
+        <div class="chart-header">
+          <div><div class="chart-title">Monthly Units by Year</div><div class="chart-subtitle">New units per month-of-year cycle, all years overlaid</div></div>
         </div>
-        <div class="chart-card full-width">
-          <div class="chart-header">
-            <div><div class="chart-title">Order Source Mix by Year</div><div class="chart-subtitle">Pre-Book vs Post Deadline vs At-Once units, per year</div></div>
-          </div>
-          <div class="chart-container" style="height:180px"><canvas id="chart_annual_source"></canvas></div>
-          ${sourceLegendHtml()}
+        <div class="chart-container" style="height:220px"><canvas id="chart_annual_monthly"></canvas></div>
+      </div>
+      <div class="chart-card full-width">
+        <div class="chart-header">
+          <div><div class="chart-title">Order Source Mix by Year</div><div class="chart-subtitle">Pre-Book vs Post Deadline vs At-Once units, per year</div></div>
         </div>
+        <div class="chart-container" style="height:180px"><canvas id="chart_annual_source"></canvas></div>
+        ${sourceLegendHtml()}
       </div>
     </div>
   `;
 }
 
+function buildAnnualPanel() {
+  return `<div id="panel_annual" class="tab-panel" style="display:none">${buildAnnualPanelInner()}</div>`;
+}
+
 function renderAnnualCharts(yearGroups) {
-  const sortedYears = Object.keys(yearGroups).sort();
+  // Drop years with zero records
+  const sortedYears = Object.keys(yearGroups)
+    .filter(yr => yearGroups[yr] && yearGroups[yr].length > 0)
+    .sort();
+  if (sortedYears.length === 0) {
+    showEmptyPanel('panel_annual');
+    return;
+  }
 
   // ── Cumulative (week-normalized) ──
   const weekly = {};
@@ -916,6 +1004,130 @@ function renderAnnualCharts(yearGroups) {
   kpiEl.innerHTML = cards.join('');
 }
 
+// ── Filter UI ────────────────────────────────────────────────────
+function escAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+function buildChip(group, key, label, color) {
+  const disabled = filterState[group].has(key);
+  const dot = color ? `<span class="chip-dot" style="background:${color}"></span>` : '';
+  return `<button type="button" class="chip ${disabled ? 'disabled' : ''}" data-group="${group}" data-key="${escAttr(key)}">${dot}<span class="chip-label">${label}</span></button>`;
+}
+
+function seasonSortFn(a, b) {
+  const ta = getSeasonCfg(a).type || 'other';
+  const tb = getSeasonCfg(b).type || 'other';
+  const TYPE_ORDER = ['fall', 'warm', 'other'];
+  const oi = t => TYPE_ORDER.indexOf(t) >= 0 ? TYPE_ORDER.indexOf(t) : 99;
+  if (oi(ta) !== oi(tb)) return oi(ta) - oi(tb);
+  const ya = parseInt(a.match(/\d+/) || 0);
+  const yb = parseInt(b.match(/\d+/) || 0);
+  if (ya !== yb) return ya - yb;
+  const rank = k => k.includes('SPRING') ? 0 : k.includes('SUMMER') ? 1 : 2;
+  return rank(a) - rank(b);
+}
+
+function renderFilterBar() {
+  // Build chips from RAW records so they don't disappear when filtered
+  const allSeasons = Array.from(new Set(rawRecords.map(r => r.season))).sort(seasonSortFn);
+  const allYears   = Array.from(new Set(rawRecords.map(r => getYearFromSeason(r.season)))).filter(Boolean).sort();
+  const allSources = Array.from(new Set(rawRecords.map(r => r.source)));
+  // Keep canonical source order if known, then any extras
+  const orderedSources = [...SOURCES.filter(s => allSources.includes(s)), ...allSources.filter(s => !SOURCES.includes(s))];
+
+  document.getElementById('filterSeasons').innerHTML = allSeasons.map(k => {
+    const cfg = getSeasonCfg(k);
+    return buildChip('seasons', k, cfg.label, cfg.color);
+  }).join('');
+
+  document.getElementById('filterYears').innerHTML = allYears.map(yr =>
+    buildChip('years', yr, yr, getYearColor(yr))
+  ).join('');
+
+  document.getElementById('filterSources').innerHTML = orderedSources.map(s =>
+    buildChip('sources', s, SOURCE_LABELS[s] || s, SOURCE_COLORS[s] || '#7d8590')
+  ).join('');
+}
+
+function updateChipVisuals() {
+  document.querySelectorAll('#filterBar .chip').forEach(el => {
+    const group = el.dataset.group;
+    const key   = el.dataset.key;
+    if (filterState[group] && filterState[group].has(key)) el.classList.add('disabled');
+    else el.classList.remove('disabled');
+  });
+}
+
+function toggleFilter(group, key) {
+  if (!filterState[group]) return;
+  if (filterState[group].has(key)) filterState[group].delete(key);
+  else filterState[group].add(key);
+  updateChipVisuals();
+  renderAll();
+}
+
+function resetFilters() {
+  filterState.seasons.clear();
+  filterState.years.clear();
+  filterState.sources.clear();
+  updateChipVisuals();
+  renderAll();
+}
+
+// ── Master render — runs every time data loads or filters change ─
+function renderAll() {
+  const filtered   = applyFilters(rawRecords);
+  const groups     = groupBySeason(filtered);
+  const typeGroups = groupByType(groups);
+  const yearGroups = groupByYear(groups);
+
+  // KPIs and table (always run; they handle empty gracefully)
+  renderKPIs(groups, typeGroups);
+  renderTable(groups);
+
+  // Per-type tab charts — render or show empty placeholder
+  for (const type of presentTypes) {
+    const keys = typeGroups[type] || [];
+    if (keys.length) {
+      // Ensure the panel still has its canvases (rebuild if previously emptied)
+      ensureTypePanel(type);
+      renderTypeCharts(type, keys, groups);
+    } else {
+      showEmptyPanel(`panel_${type}`);
+    }
+  }
+
+  // Annual tab
+  if (Object.keys(yearGroups).length) {
+    ensureAnnualPanel();
+    renderAnnualCharts(yearGroups);
+  } else {
+    showEmptyPanel('panel_annual');
+  }
+}
+
+function showEmptyPanel(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) return;
+  el.innerHTML = `<div class="filter-empty">No data matches the current filters. Adjust the chips above to bring data back.</div>`;
+}
+
+function ensureTypePanel(type) {
+  const el = document.getElementById(`panel_${type}`);
+  if (!el) return;
+  // Restore chart canvases if a previous render replaced them with the empty placeholder
+  if (!el.querySelector(`#chart_${type}_cumUnits`)) {
+    el.innerHTML = buildTabPanelInner(type);
+  }
+}
+
+function ensureAnnualPanel() {
+  const el = document.getElementById('panel_annual');
+  if (!el) return;
+  if (!el.querySelector('#chart_annual_cumUnits')) {
+    el.innerHTML = buildAnnualPanelInner();
+  }
+}
+
 // ── Main load ────────────────────────────────────────────────────
 let activeTab = null;
 
@@ -926,9 +1138,16 @@ function loadData(text, filename) {
     return;
   }
 
+  // Stash raw data for filter pipeline
+  rawRecords = records;
+  lastFilename = filename;
+  // Reset filters on a fresh load
+  filterState.seasons.clear();
+  filterState.years.clear();
+  filterState.sources.clear();
+
   const groups     = groupBySeason(records);
   const typeGroups = groupByType(groups);
-  const yearGroups = groupByYear(groups);
 
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('dashboard').style.display  = '';
@@ -938,16 +1157,16 @@ function loadData(text, filename) {
   document.getElementById('lastUpdated').textContent =
     `${filename} · Updated ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-  // Badges for active/current seasons
+  // Badges for active/current seasons (from raw data, not filtered)
   const badgesEl = document.getElementById('headerBadges');
   badgesEl.innerHTML = Object.keys(groups)
     .filter(k => getSeasonCfg(k).current)
     .map(k => `<span class="badge badge-active">${getSeasonCfg(k).label} Active</span>`)
     .join('');
 
-  // Build season tabs dynamically, then append Annual tab
+  // Build season tabs dynamically (from raw data, so they stay stable across filter changes)
   const TYPE_ORDER = ['fall', 'warm', 'other'];
-  const presentTypes = TYPE_ORDER.filter(t => typeGroups[t] && typeGroups[t].length > 0);
+  presentTypes = TYPE_ORDER.filter(t => typeGroups[t] && typeGroups[t].length > 0);
 
   const tabBar    = document.getElementById('tabBar');
   const tabPanels = document.getElementById('tabPanels');
@@ -962,11 +1181,9 @@ function loadData(text, filename) {
     presentTypes.map(t => buildTabPanel(t)).join('') +
     buildAnnualPanel();
 
-  // Render everything
-  renderKPIs(groups, typeGroups);
-  for (const type of presentTypes) renderTypeCharts(type, typeGroups[type], groups);
-  renderAnnualCharts(yearGroups);
-  renderTable(groups);
+  // Build the filter chips, then render via the filter pipeline
+  renderFilterBar();
+  renderAll();
 
   // Default to Fall tab
   const firstTab = presentTypes.includes('fall') ? 'fall' : presentTypes[0] || 'annual';
@@ -982,6 +1199,14 @@ function switchTab(tab) {
   if (tabEl)   tabEl.classList.add('active');
   if (panelEl) panelEl.style.display = '';
 }
+
+// ── Filter event wiring (delegation) ─────────────────────────────
+document.getElementById('filterBar').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  toggleFilter(chip.dataset.group, chip.dataset.key);
+});
+document.getElementById('resetFiltersBtn').addEventListener('click', resetFilters);
 
 // ── File I/O ─────────────────────────────────────────────────────
 document.getElementById('loadBtn').addEventListener('click', () => document.getElementById('fileInput').click());

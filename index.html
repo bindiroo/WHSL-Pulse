@@ -400,19 +400,54 @@ function parseDate(s) {
 }
 
 function processCSV(text) {
-  const result = Papa.parse(text, { header: false, skipEmptyLines: true });
-  const records = [];
+  // Strip BOM if present (Excel exports often have one)
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
 
-  for (const row of result.data) {
-    const season = (row[0] || '').trim().toUpperCase();
+  const result = Papa.parse(text, { header: false, skipEmptyLines: true });
+  if (!result.data || result.data.length === 0) return [];
+
+  // Detect column indices from the header row. Search the first few rows since
+  // some exports include a banner row above the header.
+  let headerIdx = -1;
+  let cols = { season: -1, date: -1, qty: -1, amount: -1, source: -1 };
+  for (let i = 0; i < Math.min(5, result.data.length); i++) {
+    const row = result.data[i].map(c => (c || '').toString().trim().toLowerCase());
+    const candidate = { season: -1, date: -1, qty: -1, amount: -1, source: -1 };
+    row.forEach((c, j) => {
+      if (c === 'season' && candidate.season < 0)               candidate.season = j;
+      else if (c === 'date' && candidate.date < 0)              candidate.date   = j;
+      else if (c.startsWith('qty') && candidate.qty < 0)        candidate.qty    = j; // 'qty' or 'qty less cxl'
+      else if ((c === 'amount' || c === 'revenue' || c === 'total') && candidate.amount < 0) candidate.amount = j;
+      else if (c === 'source' && candidate.source < 0)          candidate.source = j;
+    });
+    if (candidate.season >= 0 && candidate.date >= 0 && candidate.qty >= 0 &&
+        candidate.amount >= 0 && candidate.source >= 0) {
+      headerIdx = i;
+      cols = candidate;
+      break;
+    }
+  }
+
+  // Fallback to the legacy fixed positions (12-column padded format)
+  if (headerIdx < 0) {
+    cols = { season: 0, date: 4, qty: 8, amount: 9, source: 10 };
+  }
+
+  const records = [];
+  const startRow = headerIdx >= 0 ? headerIdx + 1 : 0;
+  for (let i = startRow; i < result.data.length; i++) {
+    const row = result.data[i];
+    if (!row) continue;
+
+    const season = (row[cols.season] || '').trim().toUpperCase();
     if (!season || season === 'SEASON') continue;
 
-    const date   = parseDate(row[4]);
+    const date = parseDate(row[cols.date]);
     if (!date) continue;
 
-    const units  = parseInt(row[8]) || 0;
-    const amount = parseAmount(row[9]);
-    const source = (row[10] || '').trim() || 'AO';
+    const units  = parseInt(row[cols.qty]) || 0;
+    const amount = parseAmount(row[cols.amount]);
+    const source = (row[cols.source] || '').trim() || 'AO';
 
     records.push({ season, date, units, amount, source });
   }

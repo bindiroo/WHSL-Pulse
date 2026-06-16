@@ -541,6 +541,55 @@ function cumulativeSeries(byWeek, globalMax, metric) {
   });
 }
 
+// ── Calendar-week and calendar-month bucketing (used by Annual tab) ──
+// Bucket orders by the week-of-year of the order date (1-52). Orders placed
+// in week 45 of any calendar year all land in the same bucket — this gives a
+// bounded 1-52 X-axis on the Annual tab so 2024/2025/2026 line up directly.
+function weekOfYear(date) {
+  const start = new Date(date.getFullYear(), 0, 1);
+  const w = Math.floor((date - start) / MS_WEEK) + 1;
+  return Math.min(52, Math.max(1, w));
+}
+
+function weeklyAggByWeekOfYear(records) {
+  if (!records || !records.length) return { byWeek: {} };
+  const byWeek = {};
+  for (const r of records) {
+    const w = weekOfYear(r.date); // 1-52
+    if (!byWeek[w]) byWeek[w] = { units: 0, amount: 0 };
+    byWeek[w].units  += r.units;
+    byWeek[w].amount += r.amount;
+  }
+  return { byWeek };
+}
+
+function cumulativeSeriesByWeekOfYear(byWeek, metric) {
+  let run = 0;
+  return Array.from({ length: 52 }, (_, i) => {
+    const w = i + 1; // 1-indexed weeks
+    if (byWeek[w]) run += byWeek[w][metric];
+    return run;
+  });
+}
+
+function weekOfYearLabels() {
+  return Array.from({ length: 52 }, (_, i) => `Wk ${i + 1}`);
+}
+
+function monthlyAggByMonthOfYear(records) {
+  if (!records || !records.length) return { byMonth: {} };
+  const byMonth = {};
+  for (const r of records) {
+    const m = r.date.getMonth(); // 0-11
+    if (!byMonth[m]) byMonth[m] = { units: 0, amount: 0 };
+    byMonth[m].units  += r.units;
+    byMonth[m].amount += r.amount;
+  }
+  return { byMonth };
+}
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
 // ── Formatting ───────────────────────────────────────────────────
 function fmtNum(v) {
   if (v == null) return '';
@@ -902,20 +951,20 @@ function buildAnnualPanelInner() {
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-header">
-          <div><div class="chart-title">Cumulative Units by Year</div><div class="chart-subtitle">Week-normalized — Week 1 = first order received for that year</div></div>
+          <div><div class="chart-title">Cumulative Units by Year</div><div class="chart-subtitle">Bucketed by calendar week of the order date (Wk 1 = Jan, Wk 52 = Dec)</div></div>
         </div>
         <div class="chart-container"><canvas id="chart_annual_cumUnits"></canvas></div>
         <div class="chart-legend" id="legend_annual"></div>
       </div>
       <div class="chart-card">
         <div class="chart-header">
-          <div><div class="chart-title">Cumulative Revenue by Year</div><div class="chart-subtitle">Week-normalized annual revenue comparison</div></div>
+          <div><div class="chart-title">Cumulative Revenue by Year</div><div class="chart-subtitle">Bucketed by calendar week of the order date — direct year-over-year pace comparison</div></div>
         </div>
         <div class="chart-container"><canvas id="chart_annual_cumRevenue"></canvas></div>
       </div>
       <div class="chart-card full-width">
         <div class="chart-header">
-          <div><div class="chart-title">Monthly Units by Year</div><div class="chart-subtitle">New units per month-of-year cycle, all years overlaid</div></div>
+          <div><div class="chart-title">Monthly Units by Year</div><div class="chart-subtitle">Bucketed by calendar month of the order date (Jan – Dec)</div></div>
         </div>
         <div class="chart-container" style="height:220px"><canvas id="chart_annual_monthly"></canvas></div>
       </div>
@@ -944,42 +993,33 @@ function renderAnnualCharts(yearGroups) {
     return;
   }
 
-  // ── Cumulative (week-normalized) ──
+  // ── Cumulative — bucketed by week-of-year (1-52) so years align ──
   const weekly = {};
-  let globalMaxWeek = 0;
   for (const yr of sortedYears) {
-    const agg = weeklyAgg(yearGroups[yr]);
-    weekly[yr] = agg;
-    globalMaxWeek = Math.max(globalMaxWeek, agg.maxWeek);
+    weekly[yr] = weeklyAggByWeekOfYear(yearGroups[yr]);
   }
 
-  const wLabels = weekLabels(globalMaxWeek + 1);
+  const wLabels = weekOfYearLabels();
 
   makeChart('chart_annual_cumUnits', 'line', wLabels,
-    sortedYears.map(yr => lineDs(yr, cumulativeSeries(weekly[yr].byWeek, globalMaxWeek, 'units'), getYearColor(yr), yr === sortedYears[sortedYears.length - 1])),
+    sortedYears.map(yr => lineDs(yr, cumulativeSeriesByWeekOfYear(weekly[yr].byWeek, 'units'), getYearColor(yr), yr === sortedYears[sortedYears.length - 1])),
     v => fmtNum(v), v => fmtNum(v) + ' units'
   );
 
   makeChart('chart_annual_cumRevenue', 'line', wLabels,
-    sortedYears.map(yr => lineDs(yr, cumulativeSeries(weekly[yr].byWeek, globalMaxWeek, 'amount'), getYearColor(yr), yr === sortedYears[sortedYears.length - 1])),
+    sortedYears.map(yr => lineDs(yr, cumulativeSeriesByWeekOfYear(weekly[yr].byWeek, 'amount'), getYearColor(yr), yr === sortedYears[sortedYears.length - 1])),
     v => fmtCur(v), v => fmtCurFull(v)
   );
 
-  // ── Monthly ──
+  // ── Monthly — bucketed by month-of-year (Jan-Dec) ──
   const monthly = {};
-  let globalMaxMonth = 0;
   for (const yr of sortedYears) {
-    const agg = monthlyAgg(yearGroups[yr]);
-    monthly[yr] = agg;
-    globalMaxMonth = Math.max(globalMaxMonth, agg.maxMonth);
+    monthly[yr] = monthlyAggByMonthOfYear(yearGroups[yr]);
   }
 
-  const firstStart = yearGroups[sortedYears[0]][0].date;
-  const mLabels = monthLabels(firstStart, globalMaxMonth + 1);
-
-  makeChart('chart_annual_monthly', 'bar', mLabels,
+  makeChart('chart_annual_monthly', 'bar', MONTH_NAMES,
     sortedYears.map(yr => {
-      const data = Array.from({ length: globalMaxMonth + 1 }, (_, mo) =>
+      const data = Array.from({ length: 12 }, (_, mo) =>
         monthly[yr].byMonth[mo] ? monthly[yr].byMonth[mo].units : 0
       );
       return barDs(yr, data, getYearColor(yr));
